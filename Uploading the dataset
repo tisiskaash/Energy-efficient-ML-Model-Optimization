@@ -22,18 +22,37 @@ def load_dataset(filepath):
     # Show an error if the file type is not supported
     raise ValueError("Only CSV and ARFF files are supported.")
 
+
+
 if __name__ == "__main__":
 
-    # Get the base directory containing the script
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    # Get the folder where main.py is located
+    base_dir = os.path.dirname(os.path.abspath(__file__))
 
-    # Create path to the dataset
-    dataset_path = os.path.join(BASE_DIR,"datasets","heart.csv")
+    # Store dataset information
+    datasets = [
+        {
+            "file": "heart.csv",
+            "target": "HeartDisease"
+        }
+    ]
 
-    # Load the dataset
+    # Select dataset to load
+    dataset_info = datasets[0]
+
+    # Create dataset path
+    dataset_path = os.path.join(base_dir,"datasets",dataset_info["file"])
+
+    # Get target column
+    target_column = dataset_info["target"]
+
+    # Load dataset
     dataset = load_dataset(dataset_path)
+
+    # Display dataset information
     print("Dataset loaded successfully!")
-    print(dataset.shape)
+
+    print("Shape:", dataset.shape)
 
     print("\nFirst 5 rows:")
     print(dataset.head())
