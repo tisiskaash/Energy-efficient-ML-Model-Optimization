@@ -1,0 +1,42 @@
+# Imports
+import os
+import pandas as pd
+from scipy.io import arff
+
+# Function to load either a CSV or ARFF dataset
+def load_dataset(filepath):
+    """Load a CSV or ARFF file into a pandas DataFrame."""
+
+    # Get the file extension (.csv or .arff)
+    extension = os.path.splitext(filepath)[1].lower()
+
+    # Load CSV file
+    if extension == ".csv":
+        return pd.read_csv(filepath)
+
+    # Load ARFF file
+    if extension == ".arff":
+        data, _ = arff.loadarff(filepath)
+        df = pd.DataFrame(data)
+
+    # Show an error if the file type is not supported
+    raise ValueError("Only CSV and ARFF files are supported.")
+
+if __name__ == "__main__":
+
+    # Get the base directory containing the script
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+    # Create path to the dataset
+    dataset_path = os.path.join(BASE_DIR,"datasets","heart.csv")
+
+    # Load the dataset
+    dataset = load_dataset(dataset_path)
+    print("Dataset loaded successfully!")
+    print(dataset.shape)
+
+    print("\nFirst 5 rows:")
+    print(dataset.head())
+
+    print("\nMissing values:")
+    print(dataset.isnull().sum())
