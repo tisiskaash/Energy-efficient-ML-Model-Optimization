@@ -53,6 +53,23 @@ def preprocess_data(dataset,target_column):
     return (X_train, X_test, y_train, y_test, preprocessor)
 
 
+def train_logistic_regression(X_train, y_train):
+    
+    # Start measuring energy consumption
+    meter = pyRAPL.Measurement("LogisticRegression")
+    meter.begin()
+
+    # Record the start time
+    start_time = time.time()
+    model = LogisticRegression(max_iter=1000, random_state=42)
+    model.fit(X_train, y_train)
+    training_time = time.time() - start_time
+    meter.end()
+    energy_joules = sum(meter.result.pkg) / 1_000_000
+
+    return (model, training_time,energy_joules)
+
+# Main Program
 if __name__ == "__main__":
 
     # Get the folder where main.py is located
@@ -97,3 +114,12 @@ print("Training data shape:", X_train.shape)
 print("Testing data shape:", X_test.shape)
 print("Training labels:", y_train.shape)
 print("Testing labels:", y_test.shape)
+
+# Train and evaluate Logistic Regression
+print("\nLogistic Regression")
+lr_model, lr_time, lr_energy = train_logistic_regression(X_train, y_train)
+print("Training time:", lr_time, "seconds")
+print("Training energy:", round(lr_energy, 4), "Joules")
+lr_accuracy = evaluate_model(lr_model, X_test, y_test)
+save_results("heart", "Logistic Regression", lr_accuracy, lr_time,lr_energy)
+
