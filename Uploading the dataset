@@ -2,6 +2,10 @@
 import os
 import pandas as pd
 from scipy.io import arff
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder
 
 # Function to load either a CSV or ARFF dataset
 def load_dataset(filepath):
@@ -22,6 +26,31 @@ def load_dataset(filepath):
     # Show an error if the file type is not supported
     raise ValueError("Only CSV and ARFF files are supported.")
 
+# Function to Preprocess the data
+def preprocess_data(dataset,target_column):
+    
+    # Separate features and target and remove target
+    X = dataset.drop(target_column, axis=1)
+    y = dataset[target_column]
+
+    # Automatically detect column types
+    numerical_features = X.select_dtypes(include=["int64", "float64"]).columns.tolist()
+    categorical_features = X.select_dtypes(include=["object", "category"]).columns.tolist()
+
+    # Create Preprocessing pipeline
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("num",StandardScaler(),numerical_features),
+            ("cat", OneHotEncoder(handle_unknown="ignore"),categorical_features)]
+    )
+
+    # Split train and test data
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2,random_state=42, stratify=y)
+
+    # Apply preprocessing
+    X_train = preprocessor.fit_transform(X_train)
+    X_test = preprocessor.transform(X_test)
+    return (X_train, X_test, y_train, y_test, preprocessor)
 
 
 if __name__ == "__main__":
@@ -59,3 +88,12 @@ if __name__ == "__main__":
 
     print("\nMissing values:")
     print(dataset.isnull().sum())
+
+    
+# Run preprocessing
+X_train, X_test, y_train, y_test, preprocessor = preprocess_data(dataset,target_column)
+print("\nPreprocessing completed!")
+print("Training data shape:", X_train.shape)
+print("Testing data shape:", X_test.shape)
+print("Training labels:", y_train.shape)
+print("Testing labels:", y_test.shape)
