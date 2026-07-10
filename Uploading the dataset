@@ -6,6 +6,12 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, classification_report
+import time
+import pyRAPL
+pyRAPL.setup()
+results = []
 
 # Function to load either a CSV or ARFF dataset
 def load_dataset(filepath):
@@ -52,7 +58,7 @@ def preprocess_data(dataset,target_column):
     X_test = preprocessor.transform(X_test)
     return (X_train, X_test, y_train, y_test, preprocessor)
 
-
+# Fuction to train Logistic Regression
 def train_logistic_regression(X_train, y_train):
     
     # Start measuring energy consumption
