@@ -75,6 +75,17 @@ def train_logistic_regression(X_train, y_train):
 
     return (model, training_time,energy_joules)
 
+# Model Performance Evaluation
+def evaluate_model(model, X_test, y_test):
+    predictions = model.predict(X_test)
+    accuracy = accuracy_score(y_test, predictions)
+    print("\nModel Evaluation")
+    print("Accuracy:", accuracy)
+    print("\nClassification Report:")
+    print(classification_report(y_test, predictions))
+
+    return accuracy
+
 # Main Program
 if __name__ == "__main__":
 
