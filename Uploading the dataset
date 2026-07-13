@@ -104,6 +104,22 @@ def train_random_forest(X_train, y_train):
 
     return (model, training_time,energy_joules)
 
+#SVM
+from sklearn.svm import SVC
+def train_svm(X_train, y_train):
+
+    meter = pyRAPL.Measurement("SVM")
+    meter.begin()
+
+    start_time = time.time()
+
+    model = SVC(random_state=42)
+    model.fit(X_train, y_train)
+    training_time = time.time() - start_time
+    meter.end()
+    energy_joules = sum(meter.result.pkg) / 1_000_000
+    return (model, training_time, energy_joules)
+
 # Main Program
 if __name__ == "__main__":
 
@@ -165,3 +181,11 @@ print("Training time:", rf_time, "seconds")
 print("Training energy:", round(rf_energy, 4), "Joules")
 rf_accuracy = evaluate_model(rf_model, X_test, y_test)
 save_results("heart", "Random Forest", rf_accuracy, rf_time,rf_energy
+
+#SVM
+print("\nSupport Vector Machine")
+svm_model, svm_time, svm_energy = train_svm(X_train, y_train)
+print("Training time:", svm_time, "seconds")
+print("Training energy:", round(svm_energy, 4), "Joules")
+svm_accuracy = evaluate_model(svm_model, X_test, y_test)
+save_results("heart", "SVM", svm_accuracy, svm_time, svm_energy)
