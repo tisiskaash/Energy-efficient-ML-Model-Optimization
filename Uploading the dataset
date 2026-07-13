@@ -120,6 +120,20 @@ def train_svm(X_train, y_train):
     energy_joules = sum(meter.result.pkg) / 1_000_000
     return (model, training_time, energy_joules)
 
+# KNN
+from sklearn.neighbors import KNeighborsClassifier
+def train_knn(X_train, y_train):
+
+    meter = pyRAPL.Measurement("KNN")
+    meter.begin()
+    start_time = time.time()
+    model = KNeighborsClassifier(n_neighbors=5)
+    model.fit(X_train, y_train)
+    training_time = time.time() - start_time
+    meter.end()
+    energy_joules = sum(meter.result.pkg) / 1_000_000
+    return (model, training_time, energy_joules)
+
 # Main Program
 if __name__ == "__main__":
 
@@ -189,3 +203,11 @@ print("Training time:", svm_time, "seconds")
 print("Training energy:", round(svm_energy, 4), "Joules")
 svm_accuracy = evaluate_model(svm_model, X_test, y_test)
 save_results("heart", "SVM", svm_accuracy, svm_time, svm_energy)
+
+# KNN
+print("\nK-Nearest Neighbours")
+knn_model, knn_time, knn_energy = train_knn(X_train, y_train)
+print("Training time:", knn_time, "seconds")
+print("Training energy:", round(knn_energy, 4), "Joules")
+knn_accuracy = evaluate_model(knn_model, X_test, y_test)
+save_results("heart", "KNN", knn_accuracy, knn_time, knn_energy)
