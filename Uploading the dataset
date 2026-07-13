@@ -134,6 +134,12 @@ def train_knn(X_train, y_train):
     energy_joules = sum(meter.result.pkg) / 1_000_000
     return (model, training_time, energy_joules)
 
+# results
+def save_results(dataset_name, model_name, accuracy, training_time, energy):
+
+    results.append({"Dataset": dataset_name, "Model": model_name,"Accuracy": accuracy,
+                    "Training_Time": training_time, "Energy_Joules": energy })
+
 # Main Program
 if __name__ == "__main__":
 
@@ -211,3 +217,16 @@ print("Training time:", knn_time, "seconds")
 print("Training energy:", round(knn_energy, 4), "Joules")
 knn_accuracy = evaluate_model(knn_model, X_test, y_test)
 save_results("heart", "KNN", knn_accuracy, knn_time, knn_energy)
+
+#results
+results_df = pd.DataFrame(results)
+print("\nFinal Results")
+print(results_df)
+
+# Save results to CSV
+results_file = os.path.join(base_dir, "results.csv")
+results_df.to_csv(results_file, index=False)
+print("\nResults saved to:", results_file)
+results_df = pd.DataFrame(results)
+print("\nBaseline Comparison")
+print(results_df.sort_values(by="Energy_Joules"))
