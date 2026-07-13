@@ -86,6 +86,24 @@ def evaluate_model(model, X_test, y_test):
 
     return accuracy
 
+# random forest
+from sklearn.ensemble import RandomForestClassifier
+
+def train_random_forest(X_train, y_train):
+
+    meter = pyRAPL.Measurement("RandomForest")
+    meter.begin()
+
+    start_time = time.time()
+
+    model = RandomForestClassifier(random_state=42)
+    model.fit(X_train, y_train)
+    training_time = time.time() - start_time
+    meter.end()
+    energy_joules = sum(meter.result.pkg) / 1_000_000
+
+    return (model, training_time,energy_joules)
+
 # Main Program
 if __name__ == "__main__":
 
@@ -140,3 +158,10 @@ print("Training energy:", round(lr_energy, 4), "Joules")
 lr_accuracy = evaluate_model(lr_model, X_test, y_test)
 save_results("heart", "Logistic Regression", lr_accuracy, lr_time,lr_energy)
 
+#random forest
+print("\nRandom Forest")
+rf_model, rf_time, rf_energy = train_random_forest(X_train, y_train)
+print("Training time:", rf_time, "seconds")
+print("Training energy:", round(rf_energy, 4), "Joules")
+rf_accuracy = evaluate_model(rf_model, X_test, y_test)
+save_results("heart", "Random Forest", rf_accuracy, rf_time,rf_energy
