@@ -1,6 +1,7 @@
 # Imports
 import os
 import pandas as pd
+import numpy as np
 from scipy.io import arff
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -140,6 +141,37 @@ def save_results(dataset_name, model_name, accuracy, training_time, energy):
     results.append({"Dataset": dataset_name, "Model": model_name,"Accuracy": accuracy,
                     "Training_Time": training_time, "Energy_Joules": energy })
 
+# Run the model multiple times
+def run_multiple_times(train_function, X_train, y_train, X_test, y_test, runs=5,**params):
+    # Store the results from each run
+    all_results = []
+    accuracies = []
+    training_times = []
+    energies = []
+    
+    for i in range(runs):
+        print("\nRun:", i+1)
+        # Train the model
+        model, training_time, energy = train_function(X_train,y_train, **params)       
+        # Evaluate the trained model
+        accuracy = evaluate_model(model,X_test, y_test)
+        # Store every run
+        all_results.append({"Run": i+1, "Accuracy": accuracy, "Training_Time": training_time, "Energy_Joules": energy})
+        # Save the results
+        accuracies.append(accuracy)
+        training_times.append(training_time)
+        energies.append(energy)
+    
+    results_table = pd.DataFrame(all_results)
+    print("\nAll Runs:")
+    print(results_table)
+    
+    median_results = {"Accuracy": np.median(accuracies), "Training_Time": np.median(training_times), "Energy_Joules": np.median(energies)}
+    
+    print("\nMedian Results:")
+    print(median_results)
+    return results_table, median_results
+
 # Main Program
 if __name__ == "__main__":
 
@@ -188,35 +220,31 @@ print("Testing labels:", y_test.shape)
 
 # Train and evaluate Logistic Regression
 print("\nLogistic Regression")
-lr_model, lr_time, lr_energy = train_logistic_regression(X_train, y_train)
-print("Training time:", lr_time, "seconds")
-print("Training energy:", round(lr_energy, 4), "Joules")
-lr_accuracy = evaluate_model(lr_model, X_test, y_test)
-save_results("heart", "Logistic Regression", lr_accuracy, lr_time,lr_energy)
+lr_runs, lr_median = run_multiple_times(train_logistic_regression, X_train, y_train, X_test, y_test)
+print("\nMedian Results")
+print(lr_median)
+save_results("heart", "Logistic Regression", lr_median["Accuracy"],lr_median["Training_Time"],lr_median["Energy_Joules"])
 
 #random forest
 print("\nRandom Forest")
-rf_model, rf_time, rf_energy = train_random_forest(X_train, y_train)
-print("Training time:", rf_time, "seconds")
-print("Training energy:", round(rf_energy, 4), "Joules")
-rf_accuracy = evaluate_model(rf_model, X_test, y_test)
-save_results("heart", "Random Forest", rf_accuracy, rf_time,rf_energy
+rf_runs, rf_median = run_multiple_times(train_random_forest, X_train, y_train, X_test, y_test)
+print("\nMedian Results")
+print(rf_median)
+save_results("heart", "Random Forest", rf_median["Accuracy"], rf_median["Training_Time"], rf_median["Energy_Joules"])
 
 #SVM
 print("\nSupport Vector Machine")
-svm_model, svm_time, svm_energy = train_svm(X_train, y_train)
-print("Training time:", svm_time, "seconds")
-print("Training energy:", round(svm_energy, 4), "Joules")
-svm_accuracy = evaluate_model(svm_model, X_test, y_test)
-save_results("heart", "SVM", svm_accuracy, svm_time, svm_energy)
+svm_runs, svm_median = run_multiple_times(train_svm, X_train, y_train, X_test, y_test)
+print("\nMedian Results")
+print(svm_median)
+save_results("heart","SVM", svm_median["Accuracy"],svm_median["Training_Time"], svm_median["Energy_Joules"])
 
 # KNN
 print("\nK-Nearest Neighbours")
-knn_model, knn_time, knn_energy = train_knn(X_train, y_train)
-print("Training time:", knn_time, "seconds")
-print("Training energy:", round(knn_energy, 4), "Joules")
-knn_accuracy = evaluate_model(knn_model, X_test, y_test)
-save_results("heart", "KNN", knn_accuracy, knn_time, knn_energy)
+knn_runs, knn_median = run_multiple_times(train_knn, X_train, y_train, X_test, y_test)
+print("\nMedian Results")
+print(knn_median)
+save_results("heart", "KNN", knn_median["Accuracy"], knn_median["Training_Time"], knn_median["Energy_Joules"])
 
 #results
 results_df = pd.DataFrame(results)
