@@ -14,7 +14,7 @@ import pyRAPL
 pyRAPL.setup()
 results = []
 
-# Function to load either a CSV or ARFF dataset
+# load either a CSV or ARFF dataset
 def load_dataset(filepath):
     """Load a CSV or ARFF file into a pandas DataFrame."""
 
@@ -33,7 +33,7 @@ def load_dataset(filepath):
     # Show an error if the file type is not supported
     raise ValueError("Only CSV and ARFF files are supported.")
 
-# Function to Preprocess the data
+# Preprocess the data
 def preprocess_data(dataset,target_column):
     
     # Separate features and target and remove target
@@ -59,8 +59,8 @@ def preprocess_data(dataset,target_column):
     X_test = preprocessor.transform(X_test)
     return (X_train, X_test, y_train, y_test, preprocessor)
 
-# Fuction to train Logistic Regression
-def train_logistic_regression(X_train, y_train):
+# Logistic Regression
+def train_logistic_regression(X_train, y_train, C=1.0):
     
     # Start measuring energy consumption
     meter = pyRAPL.Measurement("LogisticRegression")
@@ -68,7 +68,7 @@ def train_logistic_regression(X_train, y_train):
 
     # Record the start time
     start_time = time.time()
-    model = LogisticRegression(max_iter=1000, random_state=42)
+    model = LogisticRegression(,C=C, max_iter=1000, random_state=42)
     model.fit(X_train, y_train)
     training_time = time.time() - start_time
     meter.end()
@@ -87,17 +87,17 @@ def evaluate_model(model, X_test, y_test):
 
     return accuracy
 
-# random forest
+# Random forest
 from sklearn.ensemble import RandomForestClassifier
 
-def train_random_forest(X_train, y_train):
+def train_random_forest(X_train, y_train,n_estimators=100, max_depth=10):
 
     meter = pyRAPL.Measurement("RandomForest")
     meter.begin()
 
     start_time = time.time()
 
-    model = RandomForestClassifier(random_state=42)
+    model = RandomForestClassifier(n_estimators = n_estimators, max_depth = max_depth, random_state=42)
     model.fit(X_train, y_train)
     training_time = time.time() - start_time
     meter.end()
@@ -107,28 +107,28 @@ def train_random_forest(X_train, y_train):
 
 #SVM
 from sklearn.svm import SVC
-def train_svm(X_train, y_train):
+def train_svm(X_train, y_train,C=1.0, kernel = "rbf"):
 
     meter = pyRAPL.Measurement("SVM")
     meter.begin()
 
     start_time = time.time()
-
-    model = SVC(random_state=42)
+    model = SVC(C=C, kernel = kernel, random_state=42)
     model.fit(X_train, y_train)
     training_time = time.time() - start_time
     meter.end()
     energy_joules = sum(meter.result.pkg) / 1_000_000
+    
     return (model, training_time, energy_joules)
 
 # KNN
 from sklearn.neighbors import KNeighborsClassifier
-def train_knn(X_train, y_train):
+def train_knn(X_train, y_train,n_neighbors = 5):
 
     meter = pyRAPL.Measurement("KNN")
     meter.begin()
     start_time = time.time()
-    model = KNeighborsClassifier(n_neighbors=5)
+    model = KNeighborsClassifier(n_neighbors = n_neighbors)
     model.fit(X_train, y_train)
     training_time = time.time() - start_time
     meter.end()
