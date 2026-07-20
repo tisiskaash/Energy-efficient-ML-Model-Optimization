@@ -72,7 +72,7 @@ def train_logistic_regression(X_train, y_train, C=1.0):
 
     # Record the start time
     start_time = time.time()
-    model = LogisticRegression(,C=C, max_iter=1000, random_state=42)
+    model = LogisticRegression(C=C, max_iter=1000, random_state=42)
     model.fit(X_train, y_train)
     training_time = time.time() - start_time
     meter.end()
@@ -138,14 +138,14 @@ def train_knn(X_train, y_train,n_neighbors = 5):
 
 # Neural Network
 
-def train_neural_network(X_train, y_train, hidden_layer_sizes=(100,), learning_rate_init=0.001):
+def train_neural_network(X_train, y_train, hidden_layer_sizes=(100,), learning_rate_init=0.001, max_iter=1000):
     
     # Start measuring energy consumption
     meter = pyRAPL.Measurement("NeuralNetwork")
     meter.begin()
     start_time = time.time()
     model = MLPClassifier(hidden_layer_sizes=hidden_layer_sizes, learning_rate_init=learning_rate_init,
-                           max_iter=1000, early_stopping=True, validation_fraction=0.1, random_state=42 )
+                           max_iter=max_iter, early_stopping=True, validation_fraction=0.1, random_state=42 )
     model.fit(X_train, y_train)
     training_time = time.time() - start_time
     meter.end()
