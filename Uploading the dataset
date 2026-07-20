@@ -9,6 +9,10 @@ from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
 import time
 import pyRAPL
 pyRAPL.setup()
@@ -88,7 +92,6 @@ def evaluate_model(model, X_test, y_test):
     return accuracy
 
 # Random forest
-from sklearn.ensemble import RandomForestClassifier
 
 def train_random_forest(X_train, y_train,n_estimators=100, max_depth=10):
 
@@ -106,7 +109,6 @@ def train_random_forest(X_train, y_train,n_estimators=100, max_depth=10):
     return (model, training_time,energy_joules)
 
 #SVM
-from sklearn.svm import SVC
 def train_svm(X_train, y_train,C=1.0, kernel = "rbf"):
 
     meter = pyRAPL.Measurement("SVM")
@@ -122,7 +124,6 @@ def train_svm(X_train, y_train,C=1.0, kernel = "rbf"):
     return (model, training_time, energy_joules)
 
 # KNN
-from sklearn.neighbors import KNeighborsClassifier
 def train_knn(X_train, y_train,n_neighbors = 5):
 
     meter = pyRAPL.Measurement("KNN")
@@ -133,6 +134,23 @@ def train_knn(X_train, y_train,n_neighbors = 5):
     training_time = time.time() - start_time
     meter.end()
     energy_joules = sum(meter.result.pkg) / 1_000_000
+    return (model, training_time, energy_joules)
+
+# Neural Network
+
+def train_neural_network(X_train, y_train, hidden_layer_sizes=(100,), learning_rate_init=0.001):
+    
+    # Start measuring energy consumption
+    meter = pyRAPL.Measurement("NeuralNetwork")
+    meter.begin()
+    start_time = time.time()
+    model = MLPClassifier(hidden_layer_sizes=hidden_layer_sizes, learning_rate_init=learning_rate_init,
+                           max_iter=1000, early_stopping=True, validation_fraction=0.1, random_state=42 )
+    model.fit(X_train, y_train)
+    training_time = time.time() - start_time
+    meter.end()
+    energy_joules = sum(meter.result.pkg) / 1_000_000
+
     return (model, training_time, energy_joules)
 
 # results
@@ -245,6 +263,13 @@ knn_runs, knn_median = run_multiple_times(train_knn, X_train, y_train, X_test, y
 print("\nMedian Results")
 print(knn_median)
 save_results("heart", "KNN", knn_median["Accuracy"], knn_median["Training_Time"], knn_median["Energy_Joules"])
+
+# Neural Network
+print("\nNeural Network")
+nn_runs, nn_median = run_multiple_times(train_neural_network, X_train, y_train, X_test, y_test)
+print("\nMedian Results")
+print(nn_median)
+save_results("heart", "Neural Network", nn_median["Accuracy"], nn_median["Training_Time"], nn_median["Energy_Joules"])
 
 #results
 results_df = pd.DataFrame(results)
