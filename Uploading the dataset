@@ -329,6 +329,93 @@ def optimize_random_forest(X_train, y_train, X_test, y_test):
     accuracy = evaluate_model(model, X_test, y_test)
     return (model, accuracy, training_time, energy, best_n_estimators, best_max_depth, best_min_samples_split, best_max_features)
 
+
+# Define pymoo optimization problem for SVM
+SVM_KERNELS = ["linear", "rbf", "poly", "sigmoid"]
+SVM_GAMMAS = ["scale", "auto"]
+
+class SVMProblem(ElementwiseProblem):
+
+    def __init__(self, X_train, y_train, X_test, y_test):
+
+        # Store training and testing data
+        self.X_train = X_train
+        self.y_train = y_train
+        self.X_test = X_test
+        self.y_test = y_test
+
+        # Define hyperparameter range and optimization objectives
+        super().__init__(n_var=3, n_obj=2, xl=[0.01,0,0], xu=[100,3,1])
+
+    # Evaluate each solution during optimization
+    def _evaluate(self, x, out, *args, **kwargs):
+
+        # Get current C value
+        C = float(x[0])
+         # Convert numerical values to kernel and gamma
+        kernel = SVM_KERNELS[int(round(x[1]))]
+        gamma = SVM_GAMMAS[int(round(x[2]))]
+
+        # Train model using selected hyperparameter
+        model, training_time, energy = train_svm(self.X_train, self.y_train, C=C, kernel= kernel, gamma = gamma)
+        # Calculate model accuracy
+        accuracy = accuracy_score(self.y_test, model.predict(self.X_test))
+        # Store optimization objectives
+        out["F"] = [-accuracy, energy]
+
+
+# Optimize SVM hyperparameters
+def optimize_svm(X_train, y_train, X_test, y_test):
+
+    # Create optimization problem
+    problem = SVMProblem(X_train, y_train, X_test, y_test)
+
+    # Configure NSGA-II algorithm
+    algorithm = NSGA2(pop_size=20)
+    # Run optimization
+    result = minimize(problem, algorithm, ("n_gen", 50), seed=42, verbose=False)
+
+    # Extract Pareto solutions
+    pareto_solutions = result.X
+    pareto_objectives = result.F
+    # Select balanced accuracy-energy solution
+    accuracy_scores = -pareto_objectives[:, 0]
+    
+    # Normalise accuracy values
+    acc_range = accuracy_scores.max() - accuracy_scores.min()
+    if acc_range == 0:
+        normalised_accuracy = np.ones_like(accuracy_scores)
+    else:
+        normalised_accuracy = (accuracy_scores - accuracy_scores.min()) / acc_range
+
+    # Normalise energy values
+    energy_range = (pareto_objectives[:, 1].max() - pareto_objectives[:, 1].min())
+    if energy_range == 0:
+        normalised_energy = np.zeros_like(pareto_objectives[:, 1])
+    else:
+        normalised_energy = (pareto_objectives[:, 1] - pareto_objectives[:, 1].min()) / energy_range
+
+    # Calculate balance score
+    score = normalised_accuracy - normalised_energy
+    # Select best solution
+    best_index = np.argmax(score)
+    # Get optimized hyperparameter
+    best_C = float(pareto_solutions[best_index][0])
+    best_kernel = SVM_KERNELS[int(round(pareto_solutions[best_index][1]))]
+    best_gamma = SVM_GAMMAS[int(round(pareto_solutions[best_index][2]))]
+
+    print("\nBest SVM Parameters:")
+    print("C:", best_C)
+    print("Kernel:", best_kernel)
+    print("Gamma:", best_gamma)
+
+    # Train final optimized model
+    model, training_time, energy = train_svm(X_train, y_train, C=best_C, kernel=best_kernel, gamma=best_gamma)
+    # Evaluate final model
+    accuracy = evaluate_model(model, X_test, y_test)
+
+    return (model, accuracy, training_time, energy, best_C, best_kernel, best_gamma)
+
 # Run the model multiple times
 def run_multiple_times(train_function, X_train, y_train, X_test, y_test, runs=5,**params):
     # Store the results from each run
@@ -452,7 +539,17 @@ if __name__ == "__main__":
     print("\nMedian Results")
     print(svm_median)
     save_results("heart","SVM", svm_median["Accuracy"],svm_median["Training_Time"], svm_median["Energy_Joules"])
-    
+
+    # Optimised SVM
+    print("\nOptimised SVM")
+    opt_svm_model, opt_svm_accuracy, opt_svm_time, opt_svm_energy, best_C, best_kernel, best_gamma = optimize_svm(X_train, y_train, X_test, y_test)
+    print("Best C:", best_C)
+    print("Best kernel:", best_kernel)
+    print("Best gamma:", best_gamma)
+    print("Training time:", opt_svm_time, "seconds")
+    print("Training energy:", round(opt_svm_energy, 4), "Joules")
+    save_results(dataset_name, "Optimised SVM", opt_svm_accuracy, opt_svm_time, opt_svm_energy)
+
     # KNN
     print("\nK-Nearest Neighbours")
     knn_runs, knn_median = run_multiple_times(train_knn, X_train, y_train, X_test, y_test)
