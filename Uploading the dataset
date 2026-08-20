@@ -159,7 +159,7 @@ def save_results(dataset_name, model_name, accuracy, training_time, energy):
     results.append({"Dataset": dataset_name, "Model": model_name,"Accuracy": accuracy,
                     "Training_Time": training_time, "Energy_Joules": energy })
 
- Define Pymoo optimization for Logistic Regression
+Define Pymoo optimization for Logistic Regression
 class LogisticRegressionProblem(ElementwiseProblem):
 
     def __init__(self, X_train, y_train, X_test, y_test):
@@ -246,6 +246,88 @@ def optimize_logistic_regression(X_train, y_train, X_test, y_test):
     accuracy = evaluate_model(model, X_test, y_test)
 
     return (model, accuracy, training_time, energy, best_C, best_solver, best_penalty)
+
+# Define Pymoo optimization for Random Forest
+RF_MAX_FEATURES = ["sqrt", "log2", None]
+class RandomForestProblem(ElementwiseProblem):
+
+    def __init__(self, X_train, y_train, X_test, y_test):
+
+        # Store training and testing data
+        self.X_train = X_train
+        self.y_train = y_train
+        self.X_test = X_test
+        self.y_test = y_test
+
+        # Define hyperparameter ranges and optimization objectives
+        super().__init__(n_var=4, n_obj=2, xl=[10, 2, 2, 0], xu=[200, 30, 20, 2])
+
+    # Evaluate each solution during optimization
+    def _evaluate(self, x, out, *args, **kwargs):
+       
+        # Get current hyperparameter values
+        n_estimators = int(x[0])
+        max_depth = int(x[1])
+        min_samples_split = int(x[2])
+        # Convert numerical value to max_features option
+        max_features = RF_MAX_FEATURES[int(round(x[3]))]
+        # Train model using selected hyperparameters
+        model, training_time, energy = train_random_forest(self.X_train, self.y_train, n_estimators=n_estimators, max_depth=max_depth, min_samples_split=min_samples_split, max_features=max_features)
+        # Calculate model accuracy
+        accuracy = accuracy_score(self.y_test, model.predict(self.X_test))
+        # Store optimization objectives
+        out["F"] = [-accuracy, energy]
+
+# Optimize Random Forest hyperparameters
+def optimize_random_forest(X_train, y_train, X_test, y_test):
+
+    # Create optimization problem
+    problem = RandomForestProblem(X_train, y_train, X_test, y_test)
+    # Configure NSGA-II algorithm
+    algorithm = NSGA2(pop_size=20)
+    # Run optimization
+    result = minimize(problem, algorithm, ("n_gen", 50), seed=42, verbose=False)
+    # Extract Pareto solutions
+    pareto_solutions = result.X
+    pareto_objectives = result.F
+    # Select balanced accuracy-energy solution
+    accuracy_scores = -pareto_objectives[:, 0]
+    
+    # Normalise accuracy values
+    acc_range = accuracy_scores.max() - accuracy_scores.min()
+    if acc_range == 0:
+        normalised_accuracy = np.ones_like(accuracy_scores)
+    else:
+        normalised_accuracy = (accuracy_scores - accuracy_scores.min()) / acc_range
+
+    # Normalise energy values
+    energy_range = ( pareto_objectives[:, 1].max() - pareto_objectives[:, 1].min())
+    if energy_range == 0:
+        normalised_energy = np.zeros_like(pareto_objectives[:, 1])
+    else:
+        normalised_energy = (pareto_objectives[:, 1] - pareto_objectives[:, 1].min()) / energy_range
+
+    # Calculate balance score
+    score = normalised_accuracy - normalised_energy
+    # Select best solution
+    best_index = np.argmax(score)
+    # Get optimized hyperparameters
+    best_n_estimators = int(pareto_solutions[best_index][0])
+    best_max_depth = int( pareto_solutions[best_index][1])
+    best_min_samples_split = int(pareto_solutions[best_index][2])
+    best_max_features = RF_MAX_FEATURES[int(round(pareto_solutions[best_index][3]))]
+
+    print("\nBest Random Forest Parameters:")
+    print("n_estimators:", best_n_estimators)
+    print("max_depth:", best_max_depth)
+    print("min_samples_split:", best_min_samples_split)
+    print("max_features:", best_max_features)
+
+    # Train final optimized model
+    model, training_time, energy = train_random_forest(X_train, y_train, n_estimators=best_n_estimators, max_depth=best_max_depth, min_samples_split=best_min_samples_split, max_features=best_max_features)
+    # Evaluate final model
+    accuracy = evaluate_model(model, X_test, y_test)
+    return (model, accuracy, training_time, energy, best_n_estimators, best_max_depth, best_min_samples_split, best_max_features)
 
 # Run the model multiple times
 def run_multiple_times(train_function, X_train, y_train, X_test, y_test, runs=5,**params):
@@ -350,7 +432,20 @@ if __name__ == "__main__":
     print("\nMedian Results")
     print(rf_median)
     save_results("heart", "Random Forest", rf_median["Accuracy"], rf_median["Training_Time"], rf_median["Energy_Joules"])
-    
+
+    # Optimised Random Forest
+    print("\nOptimised Random Forest")
+
+    opt_rf_model, opt_rf_accuracy, opt_rf_time, opt_rf_energy, best_trees, best_depth, best_min_samples_split, best_max_features = optimize_random_forest(
+                                                                X_train, y_train, X_test, y_test)
+    print("Best n_estimators:", best_trees)
+    print("Best max_depth:", best_depth)
+    print("Best min_samples_split:", best_min_samples_split)
+    print("Best max_features:", best_max_features)
+    print("Training time:", opt_rf_time, "seconds")
+    print("Training energy:", round(opt_rf_energy, 4), "Joules")
+    save_results(dataset_name, "Optimised Random Forest", opt_rf_accuracy, opt_rf_time, opt_rf_energy)
+
     #SVM
     print("\nSupport Vector Machine")
     svm_runs, svm_median = run_multiple_times(train_svm, X_train, y_train, X_test, y_test)
