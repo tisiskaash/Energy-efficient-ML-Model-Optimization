@@ -416,6 +416,88 @@ def optimize_svm(X_train, y_train, X_test, y_test):
 
     return (model, accuracy, training_time, energy, best_C, best_kernel, best_gamma)
 
+# Define pymoo optimization problem for KNN
+KNN_WEIGHTS = ["uniform", "distance"]
+KNN_ALGORITHMS = ["auto", "ball_tree", "kd_tree", "brute"]
+
+class KNNProblem(ElementwiseProblem):
+
+    def __init__(self, X_train, y_train, X_test, y_test):
+
+        # Store training and testing data
+        self.X_train = X_train
+        self.y_train = y_train
+        self.X_test = X_test
+        self.y_test = y_test
+
+        # Define hyperparameter range and optimization objectives
+        super().__init__(n_var=3, n_obj=2, xl=[1,0,0], xu=[50,1,3])
+
+    # Evaluate each solution during optimization
+    def _evaluate(self, x, out, *args, **kwargs):
+
+        # Get current number of neighbours
+        n_neighbors = int(x[0])
+        # Convert numerical values to KNN options
+        weights = KNN_WEIGHTS[int(round(x[1]))]
+        algorithm = KNN_ALGORITHMS[int(round(x[2]))]
+
+        # Train model using selected hyperparameter
+        model, training_time, energy = train_knn(self.X_train, self.y_train, n_neighbors=n_neighbors, weights=weights, algorithm = algorithm)
+        # Calculate model accuracy
+        accuracy = accuracy_score(self.y_test, model.predict(self.X_test))
+        # Store optimization objectives
+        out["F"] = [-accuracy, energy]
+
+# Optimize KNN hyperparameters
+def optimize_knn(X_train, y_train, X_test, y_test):
+
+    # Create optimization problem
+    problem = KNNProblem(X_train, y_train, X_test, y_test)
+    # Configure NSGA-II algorithm
+    algorithm = NSGA2(pop_size=10)
+    # Run optimization
+    result = minimize(problem, algorithm, ("n_gen", 10), seed=42, verbose=True)
+    # Extract Pareto solutions
+    pareto_solutions = result.X
+    pareto_objectives = result.F
+    # Select balanced accuracy-energy solution
+    accuracy_scores = -pareto_objectives[:, 0]
+
+    # Normalise accuracy values
+    acc_range = accuracy_scores.max() - accuracy_scores.min()
+    if acc_range == 0:
+        normalised_accuracy = np.ones_like(accuracy_scores)
+    else:
+        normalised_accuracy = (accuracy_scores - accuracy_scores.min()) / acc_range
+
+    # Normalise energy values
+    energy_range = (pareto_objectives[:, 1].max() - pareto_objectives[:, 1].min())
+    if energy_range == 0:
+        normalised_energy = np.zeros_like(pareto_objectives[:, 1])
+    else:
+        normalised_energy = (pareto_objectives[:, 1] - pareto_objectives[:, 1].min()) / energy_range
+
+    # Calculate balance score
+    score = normalised_accuracy - normalised_energy
+    # Select best solution
+    best_index = np.argmax(score)
+    # Get optimized hyperparameter
+    best_neighbors = int(pareto_solutions[best_index][0])
+    best_weights = KNN_WEIGHTS[int(round(pareto_solutions[best_index][1]))]
+    best_algorithm = KNN_ALGORITHMS[int(round(pareto_solutions[best_index][2]))]
+
+    print("\nBest KNN Parameters:")
+    print("n_neighbors:", best_neighbors)
+    print("weights:", best_weights)
+    print("algorithm:", best_algorithm)
+    # Train final optimized model
+    model, training_time, energy = train_knn(X_train, y_train, n_neighbors=best_neighbors, weights = best_weights, algorithm = best_algorithm)
+    # Evaluate final model
+    accuracy = evaluate_model(model, X_test, y_test)
+
+    return (model, accuracy, training_time, energy, best_neighbors, best_weights, best_algorithm)
+
 # Run the model multiple times
 def run_multiple_times(train_function, X_train, y_train, X_test, y_test, runs=5,**params):
     # Store the results from each run
@@ -556,7 +638,17 @@ if __name__ == "__main__":
     print("\nMedian Results")
     print(knn_median)
     save_results("heart", "KNN", knn_median["Accuracy"], knn_median["Training_Time"], knn_median["Energy_Joules"])
-    
+
+    # Optimised KNN 
+    print("\nOptimised KNN")
+    opt_knn_model, opt_knn_accuracy, opt_knn_time, opt_knn_energy, best_neighbors, best_weights, best_algorithm = optimize_knn(X_train, y_train, X_test, y_test)
+    print("Best n_neighbors:", best_neighbors)
+    print("Best weights:", best_weights)
+    print("Best algorithm:", best_algorithm)
+    print("Training time:", opt_knn_time, "seconds")
+    print("Training energy:", round(opt_knn_energy, 4), "Joules")
+    save_results(results, dataset_name, "Optimised KNN", opt_knn_accuracy, opt_knn_time, opt_knn_energy)
+
     # Neural Network
     print("\nNeural Network")
     nn_runs, nn_median = run_multiple_times(train_neural_network, X_train, y_train, X_test, y_test)
