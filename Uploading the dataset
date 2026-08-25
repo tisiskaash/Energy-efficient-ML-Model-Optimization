@@ -498,6 +498,60 @@ def optimize_knn(X_train, y_train, X_test, y_test):
 
     return (model, accuracy, training_time, energy, best_neighbors, best_weights, best_algorithm)
 
+# Optimize Neural Network hyperparameters
+def optimize_neural_network(X_train, y_train, X_test, y_test):
+
+    # Create optimization problem
+    problem = NeuralNetworkProblem(X_train, y_train, X_test, y_test)
+    # Configure NSGA-II algorithm
+    algorithm = NSGA2(pop_size=10)
+    # Run optimization
+    result = minimize(problem, algorithm, ("n_gen", 10), seed=42, verbose=True)
+    # Extract Pareto solutions
+    solutions = result.X
+    objectives = result.F
+    # Select balanced accuracy-energy solution
+    accuracy_scores = -objectives[:, 0]
+    energy_scores = objectives[:, 1]
+
+    # Normalise accuracy values
+    acc_range = accuracy_scores.max() - accuracy_scores.min()
+    if acc_range == 0:
+        acc_norm = np.ones_like(accuracy_scores)
+    else:
+        acc_norm = (accuracy_scores - accuracy_scores.min()) / acc_range
+
+    # Normalise energy values
+    energy_range = energy_scores.max() - energy_scores.min()
+    if energy_range == 0:
+        energy_norm = np.zeros_like(energy_scores)
+    else:
+        energy_norm = (energy_scores - energy_scores.min()) / energy_range
+        
+    # Calculate balance score
+    score = acc_norm - energy_norm
+    # Select best solution
+    best_index = np.argmax(score)
+    # Get optimized hyperparameters
+    best_neurons = int(solutions[best_index][0])
+    best_lr = float(solutions[best_index][1])
+    best_solver = NN_SOLVERS[int(round(solutions[best_index][2]))]
+    best_activation = NN_ACTIVATIONS[int(round(solutions[best_index][3]))]
+    best_alpha = float(solutions[best_index][4])
+    print("\nBest Neural Network Parameters")
+    print("Neurons:", best_neurons)
+    print("Learning rate:", best_lr)
+    print("Solver:", best_solver)
+    print("Activation:", best_activation)
+    print("Alpha:", best_alpha)
+
+    # Train final optimized model
+    model, training_time, energy = train_neural_network(X_train, y_train, hidden_layer_sizes=(best_neurons,), learning_rate_init=best_lr, solver = best_solver, activation=best_activation, alpha=best_alpha)
+    # Evaluate final model
+    accuracy = evaluate_model(model, X_test, y_test)
+
+    return (model, accuracy, training_time, energy, best_neurons, best_lr, best_solver, best_activation, best_alpha)
+
 # Run the model multiple times
 def run_multiple_times(train_function, X_train, y_train, X_test, y_test, runs=5,**params):
     # Store the results from each run
@@ -655,7 +709,20 @@ if __name__ == "__main__":
     print("\nMedian Results")
     print(nn_median)
     save_results("heart", "Neural Network", nn_median["Accuracy"], nn_median["Training_Time"], nn_median["Energy_Joules"])
-    
+
+    # Optimised Neural Network
+    print("\nOptimised Neural Network")
+    opt_nn_model, opt_nn_accuracy, opt_nn_time, opt_nn_energy, best_neurons, best_lr, best_solver, best_activation, best_alpha = optimize_neural_network(
+                                                                                                                                X_train, y_train, X_test, y_test)
+    print("Best neurons:",best_neurons)
+    print("Best learning rate:",best_lr)
+    print("Best solver:", best_solver)
+    print("Best activation:", best_activation)
+    print("Best alpha:", best_alpha)
+    print("Training time:", opt_nn_time, "seconds")
+    print("Training energy:", round(opt_nn_energy, 4), "Joules")
+    save_results(results, dataset_name, "Optimised Neural Network", opt_nn_accuracy, opt_nn_time, opt_nn_energy)
+
     #results
     results_df = pd.DataFrame(results)
     print("\nFinal Results")
