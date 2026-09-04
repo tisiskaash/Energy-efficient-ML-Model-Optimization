@@ -7,18 +7,22 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import LabelEncoder
+import pyRAPL
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.neural_network import MLPClassifier
-import time
-import pyRAPL
-pyRAPL.setup()
-results = []
 
-# load either a CSV or ARFF dataset
+import time
+pyRAPL.setup()
+
+from pymoo.core.problem import ElementwiseProblem
+from pymoo.algorithms.moo.nsga2 import NSGA2
+from pymoo.optimize import minimize
+
+# Function to load either a CSV or ARFF dataset
 def load_dataset(filepath):
     """Load a CSV or ARFF file into a pandas DataFrame."""
 
@@ -33,16 +37,22 @@ def load_dataset(filepath):
     if extension == ".arff":
         data, _ = arff.loadarff(filepath)
         df = pd.DataFrame(data)
-
+        return df
+    
     # Show an error if the file type is not supported
     raise ValueError("Only CSV and ARFF files are supported.")
 
-# Preprocess the data
+
+
+# Function to Preprocess the data
 def preprocess_data(dataset,target_column):
     
     # Separate features and target and remove target
     X = dataset.drop(target_column, axis=1)
     y = dataset[target_column]
+
+    # Encode target labels as integers to fix MLPClassifier crash on string labels
+    y = LabelEncoder().fit_transform(y)
 
     # Automatically detect column types
     numerical_features = X.select_dtypes(include=["int64", "float64"]).columns.tolist()
@@ -64,7 +74,10 @@ def preprocess_data(dataset,target_column):
     return (X_train, X_test, y_train, y_test, preprocessor)
 
 # Logistic Regression
-def train_logistic_regression(X_train, y_train, C=1.0):
+LR_SOLVERS = ["liblinear", "saga"]
+LR_PENALTIES = ["l1", "l2"]
+
+def train_logistic_regression(X_train, y_train, C=1.0, solver="liblinear", penalty="l2"):
     
     # Start measuring energy consumption
     meter = pyRAPL.Measurement("LogisticRegression")
@@ -72,7 +85,7 @@ def train_logistic_regression(X_train, y_train, C=1.0):
 
     # Record the start time
     start_time = time.time()
-    model = LogisticRegression(C=C, max_iter=1000, random_state=42)
+    model = LogisticRegression(C=C, max_iter=3000, random_state=42, solver=solver, penalty=penalty)
     model.fit(X_train, y_train)
     training_time = time.time() - start_time
     meter.end()
@@ -91,16 +104,14 @@ def evaluate_model(model, X_test, y_test):
 
     return accuracy
 
-# Random forest
+# random forest
 
-def train_random_forest(X_train, y_train,n_estimators=100, max_depth=10):
+def train_random_forest(X_train, y_train,n_estimators=100, max_depth=10, min_samples_split=2, max_features="sqrt"):
 
     meter = pyRAPL.Measurement("RandomForest")
     meter.begin()
-
     start_time = time.time()
-
-    model = RandomForestClassifier(n_estimators = n_estimators, max_depth = max_depth, random_state=42)
+    model = RandomForestClassifier(n_estimators = n_estimators, max_depth = max_depth, random_state=42, min_samples_split=min_samples_split, max_features=max_features)
     model.fit(X_train, y_train)
     training_time = time.time() - start_time
     meter.end()
@@ -109,13 +120,12 @@ def train_random_forest(X_train, y_train,n_estimators=100, max_depth=10):
     return (model, training_time,energy_joules)
 
 #SVM
-def train_svm(X_train, y_train,C=1.0, kernel = "rbf"):
+def train_svm(X_train, y_train, C=1.0, kernel = "rbf", gamma = "scale"):
 
     meter = pyRAPL.Measurement("SVM")
     meter.begin()
-
     start_time = time.time()
-    model = SVC(C=C, kernel = kernel, random_state=42)
+    model = SVC(C=C, kernel = kernel, gamma = gamma, random_state=42, max_iter=5000)
     model.fit(X_train, y_train)
     training_time = time.time() - start_time
     meter.end()
@@ -124,28 +134,38 @@ def train_svm(X_train, y_train,C=1.0, kernel = "rbf"):
     return (model, training_time, energy_joules)
 
 # KNN
-def train_knn(X_train, y_train,n_neighbors = 5):
+def train_knn(X_train, y_train, n_neighbors = 5, weights="uniform", algorithm="auto"):
 
     meter = pyRAPL.Measurement("KNN")
     meter.begin()
     start_time = time.time()
-    model = KNeighborsClassifier(n_neighbors = n_neighbors)
+    model = KNeighborsClassifier(n_neighbors = n_neighbors, weights = weights, algorithm=algorithm)
     model.fit(X_train, y_train)
     training_time = time.time() - start_time
     meter.end()
     energy_joules = sum(meter.result.pkg) / 1_000_000
     return (model, training_time, energy_joules)
 
-# Neural Network
 
-def train_neural_network(X_train, y_train, hidden_layer_sizes=(100,), learning_rate_init=0.001, max_iter=1000):
+# Neural Network
+from sklearn.neural_network import MLPClassifier
+
+def train_neural_network(X_train, y_train, hidden_layer_sizes=(100,), learning_rate_init=0.001, solver ="adam", activation="relu", alpha=0.0001, max_iter=1000):
     
     # Start measuring energy consumption
     meter = pyRAPL.Measurement("NeuralNetwork")
     meter.begin()
     start_time = time.time()
-    model = MLPClassifier(hidden_layer_sizes=hidden_layer_sizes, learning_rate_init=learning_rate_init,
-                           max_iter=max_iter, early_stopping=True, validation_fraction=0.1, random_state=42 )
+    use_early_stopping = solver in ("adam", "sgd")
+    # Use more iterations for LBFGS
+    if solver == "lbfgs":
+        max_iter = 3000
+    
+    model = MLPClassifier(hidden_layer_sizes=hidden_layer_sizes, learning_rate_init=learning_rate_init,solver=solver, activation=activation, alpha=alpha,
+                           max_iter=max_iter, early_stopping=use_early_stopping , validation_fraction=0.1, random_state=42 )
+    # learning_rate_init is only relevant for adam and sgd
+    if solver in ("adam", "sgd"):
+        model.set_params(learning_rate_init=learning_rate_init)
     model.fit(X_train, y_train)
     training_time = time.time() - start_time
     meter.end()
@@ -154,12 +174,44 @@ def train_neural_network(X_train, y_train, hidden_layer_sizes=(100,), learning_r
     return (model, training_time, energy_joules)
 
 # results
-def save_results(dataset_name, model_name, accuracy, training_time, energy):
+def save_results(results, dataset_name, model_name, accuracy, training_time, energy):
 
     results.append({"Dataset": dataset_name, "Model": model_name,"Accuracy": accuracy,
                     "Training_Time": training_time, "Energy_Joules": energy })
 
-Define Pymoo optimization for Logistic Regression
+# Run the model multiple times
+def run_multiple_times(train_function, X_train, y_train, X_test, y_test, runs=5,**params):
+    # Store the results from each run
+    all_results = []
+    accuracies = []
+    training_times = []
+    energies = []
+    
+    for i in range(runs):
+        print("\nRun:", i+1)
+        # Train the model
+        model, training_time, energy = train_function(X_train,y_train, **params)       
+        # Evaluate the trained model
+        accuracy = evaluate_model(model,X_test, y_test)
+        # Store every run
+        all_results.append({"Run": i+1, "Accuracy": accuracy, "Training_Time": training_time, "Energy_Joules": energy})
+        # Save the results
+        accuracies.append(accuracy)
+        training_times.append(training_time)
+        energies.append(energy)
+    
+    results_table = pd.DataFrame(all_results)
+    print("\nAll Runs:")
+    print(results_table)
+    
+    median_results = {"Accuracy": np.median(accuracies), "Training_Time": np.median(training_times), "Energy_Joules": np.median(energies)}
+    
+    print("\nMedian Results:")
+    print(median_results)
+    return results_table, median_results
+
+
+# Define Pymoo optimization for Logistic Regression
 class LogisticRegressionProblem(ElementwiseProblem):
 
     def __init__(self, X_train, y_train, X_test, y_test):
@@ -196,9 +248,9 @@ def optimize_logistic_regression(X_train, y_train, X_test, y_test):
     # Create optimization problem
     problem = LogisticRegressionProblem(X_train, y_train, X_test, y_test)
     # Configure NSGA-II algorithm
-    algorithm = NSGA2(pop_size=20)
+    algorithm = NSGA2(pop_size=10)
     # Run optimization
-    result = minimize(problem, algorithm,("n_gen", 50),seed=42,verbose=False)
+    result = minimize(problem, algorithm,("n_gen", 10),seed=42,verbose=True)
     # Extract Pareto solutions
     pareto_solutions = result.X
     pareto_objectives = result.F
@@ -278,15 +330,16 @@ class RandomForestProblem(ElementwiseProblem):
         # Store optimization objectives
         out["F"] = [-accuracy, energy]
 
+
 # Optimize Random Forest hyperparameters
 def optimize_random_forest(X_train, y_train, X_test, y_test):
 
     # Create optimization problem
     problem = RandomForestProblem(X_train, y_train, X_test, y_test)
     # Configure NSGA-II algorithm
-    algorithm = NSGA2(pop_size=20)
+    algorithm = NSGA2(pop_size=10)
     # Run optimization
-    result = minimize(problem, algorithm, ("n_gen", 50), seed=42, verbose=False)
+    result = minimize(problem, algorithm, ("n_gen", 10), seed=42, verbose=True)
     # Extract Pareto solutions
     pareto_solutions = result.X
     pareto_objectives = result.F
@@ -329,7 +382,6 @@ def optimize_random_forest(X_train, y_train, X_test, y_test):
     accuracy = evaluate_model(model, X_test, y_test)
     return (model, accuracy, training_time, energy, best_n_estimators, best_max_depth, best_min_samples_split, best_max_features)
 
-
 # Define pymoo optimization problem for SVM
 SVM_KERNELS = ["linear", "rbf", "poly", "sigmoid"]
 SVM_GAMMAS = ["scale", "auto"]
@@ -371,9 +423,9 @@ def optimize_svm(X_train, y_train, X_test, y_test):
     problem = SVMProblem(X_train, y_train, X_test, y_test)
 
     # Configure NSGA-II algorithm
-    algorithm = NSGA2(pop_size=20)
+    algorithm = NSGA2(pop_size=10)
     # Run optimization
-    result = minimize(problem, algorithm, ("n_gen", 50), seed=42, verbose=False)
+    result = minimize(problem, algorithm, ("n_gen", 10), seed=42, verbose=True)
 
     # Extract Pareto solutions
     pareto_solutions = result.X
@@ -498,6 +550,39 @@ def optimize_knn(X_train, y_train, X_test, y_test):
 
     return (model, accuracy, training_time, energy, best_neighbors, best_weights, best_algorithm)
 
+# Define pymoo optimization problem for Neural Network
+NN_SOLVERS = ["adam", "sgd", "lbfgs"]
+NN_ACTIVATIONS = ["identity", "logistic", "tanh", "relu"]
+
+class NeuralNetworkProblem(ElementwiseProblem):
+
+    def __init__(self, X_train, y_train, X_test, y_test):
+
+        # Store training and testing data
+        self.X_train = X_train
+        self.y_train = y_train
+        self.X_test = X_test
+        self.y_test = y_test
+
+        # Define hyperparameter ranges and optimization objectives
+        super().__init__(n_var=5, n_obj=2, xl=[10, 0.0001, 0, 0, 0.00001], xu=[200, 0.1, 2, 3, 0.01])
+
+    # Evaluate each solution during optimization
+    def _evaluate(self, x, out, *args, **kwargs):
+
+        # Get current hyperparameter values
+        neurons = int(x[0])
+        learning_rate = float(x[1])
+        solver = NN_SOLVERS[int(round(x[2]))]
+        activation = NN_ACTIVATIONS[int(round(x[3]))]
+        alpha = float(x[4])
+        # Train model using selected hyperparameters
+        model, training_time, energy = train_neural_network(self.X_train, self.y_train, hidden_layer_sizes=(neurons,), learning_rate_init=learning_rate, solver = solver, activation = activation, alpha = alpha)
+        # Calculate model accuracy
+        accuracy = accuracy_score(self.y_test, model.predict(self.X_test))
+        # Store optimization objectives
+        out["F"] = [-accuracy,energy]
+
 # Optimize Neural Network hyperparameters
 def optimize_neural_network(X_train, y_train, X_test, y_test):
 
@@ -552,38 +637,7 @@ def optimize_neural_network(X_train, y_train, X_test, y_test):
 
     return (model, accuracy, training_time, energy, best_neurons, best_lr, best_solver, best_activation, best_alpha)
 
-# Run the model multiple times
-def run_multiple_times(train_function, X_train, y_train, X_test, y_test, runs=5,**params):
-    # Store the results from each run
-    all_results = []
-    accuracies = []
-    training_times = []
-    energies = []
-    
-    for i in range(runs):
-        print("\nRun:", i+1)
-        # Train the model
-        model, training_time, energy = train_function(X_train,y_train, **params)       
-        # Evaluate the trained model
-        accuracy = evaluate_model(model,X_test, y_test)
-        # Store every run
-        all_results.append({"Run": i+1, "Accuracy": accuracy, "Training_Time": training_time, "Energy_Joules": energy})
-        # Save the results
-        accuracies.append(accuracy)
-        training_times.append(training_time)
-        energies.append(energy)
-    
-    results_table = pd.DataFrame(all_results)
-    print("\nAll Runs:")
-    print(results_table)
-    
-    median_results = {"Accuracy": np.median(accuracies), "Training_Time": np.median(training_times), "Energy_Joules": np.median(energies)}
-    
-    print("\nMedian Results:")
-    print(median_results)
-    return results_table, median_results
-
-# Main Program
+#Main Program
 if __name__ == "__main__":
 
     # Get the folder where main.py is located
@@ -594,144 +648,184 @@ if __name__ == "__main__":
         {
             "file": "heart.csv",
             "target": "HeartDisease"
+        },
+        {
+            "file": "spambase.csv",
+            "target": "spam"
+        },
+        {
+            "file": "car_evaluation.csv",
+            "target": "class"
+        },
+        {
+            "file": "Dry_Bean_Dataset.arff",
+            "target": "Class"
+        },
+        {
+            "file": "UCI_Credit_Card.csv",
+            "target": "default.payment.next.month"
         }
+
     ]
 
-    # Select dataset to load
-    dataset_info = datasets[0]
+    # Loop for running all dataset
+    for dataset_info in datasets:
 
-    # Create dataset path
-    dataset_path = os.path.join(base_dir,"datasets",dataset_info["file"])
+        # Results for the dataset
+        results = []
+        # Extract dataset name
+        dataset_name = os.path.splitext(dataset_info["file"])[0] #<---
+        # Create dataset path
+        dataset_path = os.path.join(base_dir,"datasets",dataset_info["file"])
 
-    # Get target column
-    target_column = dataset_info["target"]
+        # Get target column
+        target_column = dataset_info["target"]
 
-    # Load dataset
-    dataset = load_dataset(dataset_path)
+        # Load dataset
+        dataset = load_dataset(dataset_path)
 
-    # Display dataset information
-    print("Dataset loaded successfully!")
+        # Remove ID from credit card dataset
+        if dataset_name == "UCI_Credit_Card":
+            if "ID" in dataset.columns:
+                dataset = dataset.drop(columns=["ID"])
 
-    print("Shape:", dataset.shape)
+        # Decode Dry bean labels
+        if dataset_name == "Dry_Bean_Dataset":
+            for column in dataset.select_dtypes(include=["object"]).columns:
+                dataset[column] = dataset[column].apply(lambda x: x.decode("utf-8") if isinstance(x, bytes) else x)
 
-    print("\nFirst 5 rows:")
-    print(dataset.head())
+        # Display dataset information
+        print("\nDataset:", dataset_name)
+        print("Dataset loaded successfully!")
+        print("Shape:", dataset.shape)
+        print("\nFirst 5 rows:")
+        print(dataset.head())
+        print("\nMissing values:")
+        print(dataset.isnull().sum())
 
-    print("\nMissing values:")
-    print(dataset.isnull().sum())
+        # Run preprocessing
+        X_train, X_test, y_train, y_test, preprocessor = preprocess_data(dataset,target_column)
+        print("\nPreprocessing completed!")
+        print("Training data shape:", X_train.shape)
+        print("Testing data shape:", X_test.shape)
+        print("Training labels:", y_train.shape)
+        print("Testing labels:", y_test.shape)
 
-    
-    # Run preprocessing
-    X_train, X_test, y_train, y_test, preprocessor = preprocess_data(dataset,target_column)
-    print("\nPreprocessing completed!")
-    print("Training data shape:", X_train.shape)
-    print("Testing data shape:", X_test.shape)
-    print("Training labels:", y_train.shape)
-    print("Testing labels:", y_test.shape)
-    
-    # Train and evaluate Logistic Regression
-    print("\nLogistic Regression")
-    lr_runs, lr_median = run_multiple_times(train_logistic_regression, X_train, y_train, X_test, y_test)
-    print("\nMedian Results")
-    print(lr_median)
-    save_results("heart", "Logistic Regression", lr_median["Accuracy"],lr_median["Training_Time"],lr_median["Energy_Joules"])
-    
-    # Optimized Logistic Regression
-    print("\nOptimised Logistic Regression")
-    # Optimize Logistic Regression hyperparameter using pymoo
-    opt_model, opt_accuracy, opt_time, opt_energy, best_C, best_solver, best_penalty = optimize_logistic_regression(X_train, y_train, X_test, y_test)
-    # Display optimized model results
-    print("Best C:", best_C)
-    print("Best solver:", best_solver)
-    print("Best penalty:", best_penalty)
-    print("Training time:", opt_time, "seconds")
-    print("Training energy:", round(opt_energy, 4), "Joules")
-    # Save optimized Logistic Regression results
-    save_results(dataset_name, "Optimised Logistic Regression", opt_accuracy, opt_time, opt_energy)
-    
-    #random forest
-    print("\nRandom Forest")
-    rf_runs, rf_median = run_multiple_times(train_random_forest, X_train, y_train, X_test, y_test)
-    print("\nMedian Results")
-    print(rf_median)
-    save_results("heart", "Random Forest", rf_median["Accuracy"], rf_median["Training_Time"], rf_median["Energy_Joules"])
 
-    # Optimised Random Forest
-    print("\nOptimised Random Forest")
+        # Logistic Regression
+        print("\nLogistic Regression")
+        # Run multiple training experiments and calculate median results
+        lr_runs, lr_median = run_multiple_times(train_logistic_regression, X_train, y_train, X_test, y_test)
+        # Display median performance results
+        print("\nMedian Results")
+        print(lr_median)
+        # Save Logistic Regression results
+        save_results(results, dataset_name, "Logistic Regression", lr_median["Accuracy"], lr_median["Training_Time"], lr_median["Energy_Joules"])
 
-    opt_rf_model, opt_rf_accuracy, opt_rf_time, opt_rf_energy, best_trees, best_depth, best_min_samples_split, best_max_features = optimize_random_forest(
-                                                                X_train, y_train, X_test, y_test)
-    print("Best n_estimators:", best_trees)
-    print("Best max_depth:", best_depth)
-    print("Best min_samples_split:", best_min_samples_split)
-    print("Best max_features:", best_max_features)
-    print("Training time:", opt_rf_time, "seconds")
-    print("Training energy:", round(opt_rf_energy, 4), "Joules")
-    save_results(dataset_name, "Optimised Random Forest", opt_rf_accuracy, opt_rf_time, opt_rf_energy)
 
-    #SVM
-    print("\nSupport Vector Machine")
-    svm_runs, svm_median = run_multiple_times(train_svm, X_train, y_train, X_test, y_test)
-    print("\nMedian Results")
-    print(svm_median)
-    save_results("heart","SVM", svm_median["Accuracy"],svm_median["Training_Time"], svm_median["Energy_Joules"])
+        # Optimized Logistic Regression
+        print("\nOptimised Logistic Regression")
+        # Optimize Logistic Regression hyperparameter using pymoo
+        opt_model, opt_accuracy, opt_time, opt_energy, best_C, best_solver, best_penalty = optimize_logistic_regression(X_train, y_train, X_test, y_test)
+        # Display optimized model results
+        print("Best C:", best_C)
+        print("Best solver:", best_solver)
+        print("Best penalty:", best_penalty)
+        print("Training time:", opt_time, "seconds")
+        print("Training energy:", round(opt_energy, 4), "Joules")
+        # Save optimized Logistic Regression results
+        save_results(results, dataset_name, "Optimised Logistic Regression", opt_accuracy, opt_time, opt_energy)
 
-    # Optimised SVM
-    print("\nOptimised SVM")
-    opt_svm_model, opt_svm_accuracy, opt_svm_time, opt_svm_energy, best_C, best_kernel, best_gamma = optimize_svm(X_train, y_train, X_test, y_test)
-    print("Best C:", best_C)
-    print("Best kernel:", best_kernel)
-    print("Best gamma:", best_gamma)
-    print("Training time:", opt_svm_time, "seconds")
-    print("Training energy:", round(opt_svm_energy, 4), "Joules")
-    save_results(dataset_name, "Optimised SVM", opt_svm_accuracy, opt_svm_time, opt_svm_energy)
+        # Random forest
+        print("\nRandom Forest")
+        rf_runs, rf_median = run_multiple_times(train_random_forest, X_train, y_train, X_test, y_test)
+        print("\nMedian Results")
+        print(rf_median)
+        save_results(results, dataset_name, "Random Forest", rf_median["Accuracy"], rf_median["Training_Time"], rf_median["Energy_Joules"])
 
-    # KNN
-    print("\nK-Nearest Neighbours")
-    knn_runs, knn_median = run_multiple_times(train_knn, X_train, y_train, X_test, y_test)
-    print("\nMedian Results")
-    print(knn_median)
-    save_results("heart", "KNN", knn_median["Accuracy"], knn_median["Training_Time"], knn_median["Energy_Joules"])
+        # Optimised Random Forest
+        print("\nOptimised Random Forest")
 
-    # Optimised KNN 
-    print("\nOptimised KNN")
-    opt_knn_model, opt_knn_accuracy, opt_knn_time, opt_knn_energy, best_neighbors, best_weights, best_algorithm = optimize_knn(X_train, y_train, X_test, y_test)
-    print("Best n_neighbors:", best_neighbors)
-    print("Best weights:", best_weights)
-    print("Best algorithm:", best_algorithm)
-    print("Training time:", opt_knn_time, "seconds")
-    print("Training energy:", round(opt_knn_energy, 4), "Joules")
-    save_results(results, dataset_name, "Optimised KNN", opt_knn_accuracy, opt_knn_time, opt_knn_energy)
+        opt_rf_model, opt_rf_accuracy, opt_rf_time, opt_rf_energy, best_trees, best_depth, best_min_samples_split, best_max_features = optimize_random_forest(
+                                                                    X_train, y_train, X_test, y_test)
+        print("Best n_estimators:", best_trees)
+        print("Best max_depth:", best_depth)
+        print("Best min_samples_split:", best_min_samples_split)
+        print("Best max_features:", best_max_features)
+        print("Training time:", opt_rf_time, "seconds")
+        print("Training energy:", round(opt_rf_energy, 4), "Joules")
+        save_results(results, dataset_name, "Optimised Random Forest", opt_rf_accuracy, opt_rf_time, opt_rf_energy)
 
-    # Neural Network
-    print("\nNeural Network")
-    nn_runs, nn_median = run_multiple_times(train_neural_network, X_train, y_train, X_test, y_test)
-    print("\nMedian Results")
-    print(nn_median)
-    save_results("heart", "Neural Network", nn_median["Accuracy"], nn_median["Training_Time"], nn_median["Energy_Joules"])
+        #SVM
+        print("\nSupport Vector Machine")
+        svm_runs, svm_median = run_multiple_times(train_svm, X_train, y_train, X_test, y_test)
+        print("\nMedian Results")
+        print(svm_median)
+        save_results(results, dataset_name,"SVM", svm_median["Accuracy"],svm_median["Training_Time"], svm_median["Energy_Joules"])
 
-    # Optimised Neural Network
-    print("\nOptimised Neural Network")
-    opt_nn_model, opt_nn_accuracy, opt_nn_time, opt_nn_energy, best_neurons, best_lr, best_solver, best_activation, best_alpha = optimize_neural_network(
-                                                                                                                                X_train, y_train, X_test, y_test)
-    print("Best neurons:",best_neurons)
-    print("Best learning rate:",best_lr)
-    print("Best solver:", best_solver)
-    print("Best activation:", best_activation)
-    print("Best alpha:", best_alpha)
-    print("Training time:", opt_nn_time, "seconds")
-    print("Training energy:", round(opt_nn_energy, 4), "Joules")
-    save_results(results, dataset_name, "Optimised Neural Network", opt_nn_accuracy, opt_nn_time, opt_nn_energy)
+        # Optimised SVM
+        print("\nOptimised SVM")
+        opt_svm_model, opt_svm_accuracy, opt_svm_time, opt_svm_energy, best_C, best_kernel, best_gamma = optimize_svm(X_train, y_train, X_test, y_test)
+        print("Best C:", best_C)
+        print("Best kernel:", best_kernel)
+        print("Best gamma:", best_gamma)
+        print("Training time:", opt_svm_time, "seconds")
+        print("Training energy:", round(opt_svm_energy, 4), "Joules")
+        save_results(results, dataset_name, "Optimised SVM", opt_svm_accuracy, opt_svm_time, opt_svm_energy)
 
-    #results
-    results_df = pd.DataFrame(results)
-    print("\nFinal Results")
-    print(results_df)
-    
-    # Save results to CSV
-    results_file = os.path.join(base_dir, "results.csv")
-    results_df.to_csv(results_file, index=False)
-    print("\nResults saved to:", results_file)
-    results_df = pd.DataFrame(results)
-    print("\nBaseline Comparison")
-    print(results_df.sort_values(by="Energy_Joules"))
+        # KNN
+        print("\nK-Nearest Neighbours")
+        knn_runs, knn_median = run_multiple_times(train_knn, X_train, y_train, X_test, y_test)
+        print("\nMedian Results")
+        print(knn_median)
+        save_results(results, dataset_name, "KNN", knn_median["Accuracy"], knn_median["Training_Time"], knn_median["Energy_Joules"])
+
+        # Optimised KNN 
+        print("\nOptimised KNN")
+        opt_knn_model, opt_knn_accuracy, opt_knn_time, opt_knn_energy, best_neighbors, best_weights, best_algorithm = optimize_knn(X_train, y_train, X_test, y_test)
+        print("Best n_neighbors:", best_neighbors)
+        print("Best weights:", best_weights)
+        print("Best algorithm:", best_algorithm)
+        print("Training time:", opt_knn_time, "seconds")
+        print("Training energy:", round(opt_knn_energy, 4), "Joules")
+        save_results(results, dataset_name, "Optimised KNN", opt_knn_accuracy, opt_knn_time, opt_knn_energy)
+
+        # Neural Network
+        print("\nNeural Network")
+        nn_runs, nn_median = run_multiple_times(train_neural_network, X_train, y_train, X_test, y_test)
+        print("\nMedian Results")
+        print(nn_median)
+        save_results(results, dataset_name, "Neural Network", nn_median["Accuracy"], nn_median["Training_Time"], nn_median["Energy_Joules"])
+
+        # Optimised Neural Network
+        print("\nOptimised Neural Network")
+        opt_nn_model, opt_nn_accuracy, opt_nn_time, opt_nn_energy, best_neurons, best_lr, best_solver, best_activation, best_alpha = optimize_neural_network(
+                                                                                                                                    X_train, y_train, X_test, y_test)
+        print("Best neurons:",best_neurons)
+        print("Best learning rate:",best_lr)
+        print("Best solver:", best_solver)
+        print("Best activation:", best_activation)
+        print("Best alpha:", best_alpha)
+        print("Training time:", opt_nn_time, "seconds")
+        print("Training energy:", round(opt_nn_energy, 4), "Joules")
+        save_results(results, dataset_name, "Optimised Neural Network", opt_nn_accuracy, opt_nn_time, opt_nn_energy)
+
+        # Convert results into a DataFrame
+        results_df = pd.DataFrame(results)
+
+        # Display final results
+        print("\nFinal Results")
+        print(results_df)
+
+        # Save results to CSV file
+        results_file = os.path.join(base_dir, f"{dataset_name}_results.csv")
+        results_df.to_csv(results_file, index=False)
+        print("\nResults saved to:", results_file)
+
+        # Compare model performance
+        print("\nBaseline Comparison")
+
+        # Sort models by highest accuracy and lowest energy consumption
+        comparison = results_df.sort_values(by=["Accuracy", "Energy_Joules"], ascending=[False, True])
+        print(comparison)
+        
